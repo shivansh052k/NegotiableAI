@@ -164,13 +164,16 @@ class DQNStrategyAgent:
         return loss.item()
 
     def _obs_to_tensor(self, obs: dict) -> torch.Tensor:
-        vec = np.array([
-            obs.get("phase", 0),
-            obs.get("current_offer", 0.0),
-            obs.get("counterpart_offer", 0.0),
-            obs.get("round", 0) / 20.0,
-            obs.get("zopa", 0.0),
-        ], dtype=np.float32)
+        vec = np.zeros(32, dtype=np.float32)
+        vec[0] = obs.get("phase_opening", 0.0)
+        vec[1] = obs.get("phase_bargaining", 0.0)
+        vec[2] = obs.get("phase_closing", 0.0)
+        vec[3] = obs.get("phase_final", 0.0)
+        vec[4] = obs.get("current_offer", 0.0)
+        vec[5] = obs.get("counterpart_offer", 0.0)
+        vec[6] = obs.get("round", 0) / 20.0
+        vec[7] = obs.get("zopa", 0.0)
+        # vec[8:32] reserved for future features
         return torch.FloatTensor(vec).unsqueeze(0).to(self.device)
 
     def save(self, path: str) -> None:
@@ -181,3 +184,26 @@ class DQNStrategyAgent:
         self.policy_net.load_state_dict(ckpt["policy"])
         self.target_net.load_state_dict(ckpt["target"])
         self.steps = ckpt.get("steps", 0)
+    
+    def load_from_ppo(self, ppo_trainer: "Any") -> None:
+        """Bootstrap DQN policy head from trained PPO policy head."""
+        ppo_state = ppo_trainer.policy.state_dict()
+        dqn_state = self.policy_net.state_dict()
+
+        # Map shared backbone layers
+        for key in ["backbone.0.weight", "backbone.0.bias",
+                    "backbone.3.weight", "backbone.3.bias"]:
+            ppo_key = key
+            dqn_key = key.replace("backbone.0", "net.0").replace("backbone.3", "net.3")
+            if ppo_key in ppo_state and dqn_key in dqn_state:
+                if ppo_state[ppo_key].shape == dqn_state[dqn_key].shape:
+                    dqn_state[dqn_key] = ppo_state[ppo_key]
+
+        # Bootstrap advantage head from PPO policy head
+        if "policy_head.weight" in ppo_state and "advantage_head.weight" in dqn_state:
+            if ppo_state["policy_head.weight"].shape == dqn_state["advantage_head.weight"].shape:
+                dqn_state["advantage_head.weight"] = ppo_state["policy_head.weight"]
+                dqn_state["advantage_head.bias"]   = ppo_state["policy_head.bias"]
+
+        self.policy_net.load_state_dict(dqn_state)
+        self.target_net.load_state_dict(dqn_state)

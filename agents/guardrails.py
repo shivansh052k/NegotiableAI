@@ -6,15 +6,9 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Any
-
+from agents.negotiation_graph import NegotiationPhase
 from pydantic import BaseModel, Field, model_validator
 
-
-class NegotiationPhase(str, Enum):
-    OPENING = "opening"
-    BARGAINING = "bargaining"
-    CLOSING = "closing"
-    FINAL = "final"
 
 
 # ─── Validation Models ────────────────────────────────────────────────────────

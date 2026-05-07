@@ -5,7 +5,7 @@ negotiation:
   max_rounds: 20
 
   dqn:
-    obs_dim: 5
+    obs_dim: 32
     lr: 1.0e-4
     gamma: 0.99
     epsilon_start: 1.0
@@ -57,4 +57,6 @@ training:
 
 monitoring:
   langfuse_host: "https://cloud.langfuse.com"
+  cb_failure_threshold: 5
+  cb_cooldown_seconds: 60
   flush_interval_seconds: 30

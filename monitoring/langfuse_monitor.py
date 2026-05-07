@@ -96,9 +96,18 @@ class NegotiationMonitor:
     """Wraps Langfuse for trace-level observability of negotiation episodes."""
 
     def __init__(self, cfg: dict):
+        import os
+        public_key = os.environ.get("LANGFUSE_PUBLIC_KEY") or cfg.get("langfuse_public_key")
+        secret_key = os.environ.get("LANGFUSE_SECRET_KEY") or cfg.get("langfuse_secret_key")
+
+        if not public_key or not secret_key:
+            raise ValueError(
+                "Langfuse keys missing. Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY env vars."
+            )
+
         self.langfuse = Langfuse(
-            public_key=cfg["langfuse_public_key"],
-            secret_key=cfg["langfuse_secret_key"],
+            public_key=public_key,
+            secret_key=secret_key,
             host=cfg.get("langfuse_host", "https://cloud.langfuse.com"),
         )
         self.circuit_breaker = CircuitBreaker(

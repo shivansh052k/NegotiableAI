@@ -143,26 +143,42 @@ class TestCircuitBreaker:
 # ─── Regression Gate ──────────────────────────────────────────────────────────
 
 class TestRegressionGates:
-    """These gates must pass before any deployment."""
-
     AGREEMENT_RATE_THRESHOLD = 0.55
     CONSTRAINT_SAT_THRESHOLD = 0.90
     P95_LATENCY_MS_THRESHOLD = 200
 
-    def test_agreement_rate_gate(self):
-        """Validate agreement rate exceeds 55% (baseline was 42%)."""
-        mock_results = {"agreement_rate": 0.61, "n_episodes": 5000}
-        assert mock_results["agreement_rate"] >= self.AGREEMENT_RATE_THRESHOLD, (
-            f"Agreement rate {mock_results['agreement_rate']:.2%} below threshold "
-            f"{self.AGREEMENT_RATE_THRESHOLD:.2%}"
+    @pytest.fixture
+    def mock_episodes(self):
+        from environment.distributed_sim import EpisodeResult
+        results = []
+        for i in range(100):
+            results.append(EpisodeResult(
+                episode_id=i,
+                agreement_reached=(i < 61),       # 61% agreement
+                final_offer=1000.0,
+                rounds=10,
+                constraint_violations=(0 if i < 93 else 1),  # 93% satisfaction
+                duration_ms=100.0 + (i * 0.5),    # p95 ~= 149ms
+                deal_value=1000.0 if i < 61 else 0.0,
+            ))
+        return results
+
+    def test_agreement_rate_gate(self, mock_episodes):
+        from environment.distributed_sim import DistributedSimulator
+        sim = DistributedSimulator({"n_workers": 1})
+        metrics = sim.aggregate_metrics(mock_episodes)
+        assert metrics["agreement_rate"] >= self.AGREEMENT_RATE_THRESHOLD, (
+            f"Agreement rate {metrics['agreement_rate']:.2%} below threshold"
         )
 
-    def test_constraint_satisfaction_gate(self):
-        """Validate constraint satisfaction rate exceeds 90%."""
-        mock_results = {"constraint_satisfaction_rate": 0.93}
-        assert mock_results["constraint_satisfaction_rate"] >= self.CONSTRAINT_SAT_THRESHOLD
+    def test_constraint_satisfaction_gate(self, mock_episodes):
+        from environment.distributed_sim import DistributedSimulator
+        sim = DistributedSimulator({"n_workers": 1})
+        metrics = sim.aggregate_metrics(mock_episodes)
+        assert metrics["constraint_satisfaction_rate"] >= self.CONSTRAINT_SAT_THRESHOLD
 
-    def test_p95_latency_gate(self):
-        """Validate p95 latency stays below 200ms."""
-        mock_results = {"p95_latency_ms": 145.0}
-        assert mock_results["p95_latency_ms"] <= self.P95_LATENCY_MS_THRESHOLD
+    def test_p95_latency_gate(self, mock_episodes):
+        from environment.distributed_sim import DistributedSimulator
+        sim = DistributedSimulator({"n_workers": 1})
+        metrics = sim.aggregate_metrics(mock_episodes)
+        assert metrics["p95_latency_ms"] <= self.P95_LATENCY_MS_THRESHOLD

@@ -133,25 +133,37 @@ class NegotiationGraph:
     # ── Helpers ──────────────────────────────────────────────────────────────
 
     def _build_obs(self, state: NegotiationState) -> dict:
+        phases = [p.value for p in NegotiationPhase]
         return {
-            "phase": state.phase.value,
-            "current_offer": state.current_offer,
+            "phase_opening":    float(state.phase == NegotiationPhase.OPENING),
+            "phase_bargaining": float(state.phase == NegotiationPhase.BARGAINING),
+            "phase_closing":    float(state.phase == NegotiationPhase.CLOSING),
+            "phase_final":      float(state.phase == NegotiationPhase.FINAL),
+            "current_offer":    state.current_offer,
             "counterpart_offer": state.counterpart_offer,
-            "round": state.round_count,
-            "zopa": abs(state.current_offer - state.counterpart_offer),
+            "round":            state.round_count,
+            "zopa":             abs(state.current_offer - state.counterpart_offer),
         }
 
     def _extract_offer(self, text: str, fallback: float) -> float:
         import re
-        match = re.search(r"\$?([\d,]+(?:\.\d{1,2})?)", text.replace(",", ""))
-        return float(match.group(1)) if match else fallback
+        cleaned = text.replace(",", "")
+        matches = re.findall(r"\$(\d+(?:\.\d{1,2})?)", cleaned)
+        return float(matches[-1]) if matches else fallback
 
     def _advance_phase(self, state: NegotiationState) -> NegotiationPhase:
-        thresholds = {10: NegotiationPhase.BARGAINING, 16: NegotiationPhase.CLOSING}
-        for round_threshold, phase in sorted(thresholds.items()):
-            if state.round_count < round_threshold:
-                return phase
-        return NegotiationPhase.FINAL
+        thresholds = [
+            (0,  NegotiationPhase.OPENING),
+            (10, NegotiationPhase.BARGAINING),
+            (16, NegotiationPhase.CLOSING),
+            (20, NegotiationPhase.FINAL),
+        ]
+        current_phase = NegotiationPhase.OPENING
+        for min_round, phase in thresholds:
+            if state.round_count >= min_round:
+                current_phase = phase
+        return current_phase
+
 
     async def run_episode(self, initial_state: NegotiationState) -> NegotiationState:
         result = await self.graph.ainvoke(initial_state)

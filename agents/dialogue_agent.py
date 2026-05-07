@@ -13,6 +13,11 @@ from pydantic import BaseModel
 
 from agents.negotiation_graph import NegotiationPhase
 
+import logging
+from monitoring.langfuse_monitor import CircuitBreaker
+
+logger = logging.getLogger(__name__)
+
 
 SYSTEM_PROMPT = """You are a skilled negotiation agent optimizing for deal closure.
 Your goal is to reach an agreement within acceptable price bounds while maintaining rapport.
@@ -48,6 +53,10 @@ class DialogueAgent:
         self.cfg = DialogueConfig(**cfg)
         self.reward_cfg = PPORewardSignal(**cfg.get("ppo_reward", {}))
         self.client = httpx.AsyncClient(base_url=self.cfg.vllm_base_url, timeout=self.cfg.timeout)
+        self.circuit_breaker = CircuitBreaker(
+            failure_threshold=cfg.get("cb_failure_threshold", 5),
+            cooldown_seconds=cfg.get("cb_cooldown_seconds", 60)
+            )
 
     async def generate(
         self,
@@ -71,10 +80,16 @@ class DialogueAgent:
             "top_p": self.cfg.top_p,
         }
         try:
-            response = await self.client.post("/v1/chat/completions", json=payload)
+            response = await self.circuit_breaker.async_call(
+                self.client.post, "/v1/chat/completions", json=payload
+            )
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
+        except RuntimeError as e:
+            logger.error("Circuit breaker open — vLLM unavailable: %s", e)
+            return f"I'd like to discuss the offer of ${current_offer:.2f} further."
         except httpx.HTTPError as e:
+            logger.error("vLLM HTTP error (offer=%.2f): %s", current_offer, e)
             return f"I'd like to discuss the offer of ${current_offer:.2f} further."
 
     def compute_ppo_reward(

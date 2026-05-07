@@ -90,14 +90,15 @@ class DistributedSimulator:
     async def run_parallel_episodes(
         self, n_episodes: int, scenario_fn: Any
     ) -> list[EpisodeResult]:
-        """Run n_episodes in parallel, distributing across workers."""
         tasks = []
         for ep_id in range(n_episodes):
             worker = self._workers[ep_id % self.n_workers]
             scenario = self._get_or_fetch_scenario(scenario_fn, ep_id)
             tasks.append(worker.run_episode.remote(ep_id, scenario))
 
-        results = await asyncio.gather(*[asyncio.wrap_future(t.future()) for t in tasks], return_exceptions=True)
+        results = await asyncio.get_event_loop().run_in_executor(
+            None, ray.get, tasks
+        )
         return [r for r in results if isinstance(r, EpisodeResult)]
 
     def run_episodes_sync(self, n_episodes: int, scenario_fn: Any) -> list[EpisodeResult]:
