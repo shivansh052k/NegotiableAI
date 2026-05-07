@@ -25,6 +25,7 @@ venv/
 .venv/
 env/
 ENV/
+.env.example
 
 # PyTorch / ML
 checkpoints/
